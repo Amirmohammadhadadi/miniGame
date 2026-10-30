@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
-import { connectDB } from '../../../lib/mongodb';
-import { User, GameSession } from '../../../lib/models';
+import clientPromise from '../../../lib/mongodb';
 
-// جدول ضرایب استاندارد بازی Mines برای شبکه ۳x3 با ۲ بمب
 const MULTIPLIERS = [1.25, 1.56, 1.95, 2.44, 3.05, 3.81, 4.76];
 
 export async function POST(req: Request) {
   try {
-    await connectDB();
     const { telegramId, gameId, tileIndex } = await req.json();
 
-    const game = await GameSession.findOne({ _id: gameId, telegramId, status: 'active' });
+    const client = await clientPromise;
+    const db = client.db('telegram_mini_game');
+    
+    // 🟢 جستجو بر اساس gameId
+    const game = await db.collection('games').findOne({ gameId, telegramId, status: 'active' });
+
     if (!game) {
       return NextResponse.json({ error: 'بازی فعالی یافت نشد' }, { status: 400 });
     }
@@ -19,46 +21,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'این خانه قبلاً باز شده است' }, { status: 400 });
     }
 
-    // بررسی اینکه آیا خانه انتخابی بمب است یا خیر
     if (game.bombs?.includes(tileIndex)) {
-      // باخت! کاربر به بمب برخورد کرد
-      game.status = 'lost';
-      game.profit = -game.betAmount;
-      await game.save();
+      // 🟢 آپدیت بر اساس gameId
+      await db.collection('games').updateOne(
+        { gameId }, 
+        { $set: { status: 'lost', profit: -game.betAmount } }
+      );
 
       return NextResponse.json({
         success: true,
         hitBomb: true,
-        bombs: game.bombs, // نمایش بمب‌ها به کاربر در پایان بازی
+        bombs: game.bombs,
         message: 'به بمب برخورد کردید! باختید.',
       });
     }
 
-    // خانه امن بود
-    game.revealed?.push(tileIndex);
-    const revealedCount = game.revealed?.length || 1;
+    const newRevealed = [...(game.revealed || []), tileIndex];
+    const revealedCount = newRevealed.length;
     const currentMultiplier = MULTIPLIERS[Math.min(revealedCount - 1, MULTIPLIERS.length - 1)];
-    
-    game.cashoutMultiplier = currentMultiplier;
-    await game.save();
 
-    // اگر تمام ۷ خانه امن باز شد، بازی به صورت خودکار برنده می‌شود
     if (revealedCount === 7) {
       const winnings = Math.floor(game.betAmount * currentMultiplier);
       const profit = winnings - game.betAmount;
 
-      game.status = 'won';
-      game.profit = profit;
-      await game.save();
+      await db.collection('games').updateOne(
+        { gameId },
+        { $set: { status: 'won', profit, cashoutMultiplier: currentMultiplier, revealed: newRevealed } }
+      );
 
-      const user = await User.findOne({ telegramId });
-      user.balance += winnings;
-      user.totalWins += 1;
-      user.totalProfit += profit;
-      if (currentMultiplier > user.bestMultiplier) {
-        user.bestMultiplier = currentMultiplier;
-      }
-      await user.save();
+      const user = await db.collection('users').findOne({ telegramId });
+      const bestM = user?.bestMultiplier || 1.0;
+
+      await db.collection('users').updateOne(
+        { telegramId },
+        { 
+          $inc: { balance: winnings, totalWins: 1, totalProfit: profit },
+          $set: { bestMultiplier: Math.max(bestM, currentMultiplier) }
+        }
+      );
+
+      const updatedUser = await db.collection('users').findOne({ telegramId });
 
       return NextResponse.json({
         success: true,
@@ -66,16 +68,21 @@ export async function POST(req: Request) {
         wonGame: true,
         multiplier: currentMultiplier,
         winnings,
-        balance: user.balance,
+        balance: updatedUser?.balance,
       });
     }
+
+    await db.collection('games').updateOne(
+      { gameId },
+      { $set: { cashoutMultiplier: currentMultiplier, revealed: newRevealed } }
+    );
 
     return NextResponse.json({
       success: true,
       hitBomb: false,
       wonGame: false,
       multiplier: currentMultiplier,
-      revealed: game.revealed,
+      revealed: newRevealed,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

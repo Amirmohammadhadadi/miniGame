@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
-import { connectDB } from '../../../lib/mongodb';
-import { User, GameSession } from '../../../lib/models';
+import clientPromise from '../../../lib/mongodb';
 
 export async function POST(req: Request) {
   try {
-    await connectDB();
     const { telegramId, gameId } = await req.json();
 
-    const game = await GameSession.findOne({ _id: gameId, telegramId, status: 'active' });
+    const client = await clientPromise;
+    const db = client.db('telegram_mini_game');
+    
+    // 🟢 جستجو بر اساس gameId
+    const game = await db.collection('games').findOne({ gameId, telegramId, status: 'active' });
+
     if (!game || !game.revealed || game.revealed.length === 0) {
       return NextResponse.json({ error: 'امکان برداشت وجود ندارد' }, { status: 400 });
     }
@@ -16,26 +19,31 @@ export async function POST(req: Request) {
     const winnings = Math.floor(game.betAmount * multiplier);
     const profit = winnings - game.betAmount;
 
-    game.status = 'won';
-    game.profit = profit;
-    await game.save();
+    // 🟢 آپدیت بر اساس gameId
+    await db.collection('games').updateOne(
+      { gameId },
+      { $set: { status: 'won', profit } }
+    );
 
-    // واریز جایزه به کیف پول کاربر
-    const user = await User.findOne({ telegramId });
-    user.balance += winnings;
-    user.totalWins += 1;
-    user.totalProfit += profit;
-    if (multiplier > user.bestMultiplier) {
-      user.bestMultiplier = multiplier;
-    }
-    await user.save();
+    const user = await db.collection('users').findOne({ telegramId });
+    const bestM = user?.bestMultiplier || 1.0;
+
+    await db.collection('users').updateOne(
+      { telegramId },
+      { 
+        $inc: { balance: winnings, totalWins: 1, totalProfit: profit },
+        $set: { bestMultiplier: Math.max(bestM, multiplier) }
+      }
+    );
+
+    const updatedUser = await db.collection('users').findOne({ telegramId });
 
     return NextResponse.json({
       success: true,
       winnings,
       profit,
-      balance: user.balance,
-      bombs: game.bombs, // نشان دادن جای بمب‌ها بعد از Cash Out
+      balance: updatedUser?.balance,
+      bombs: game.bombs,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

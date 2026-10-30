@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import { connectDB } from '../../lib/mongodb';
-import { GameSession } from '../../lib/models';
+import clientPromise from '../../lib/mongodb'; // دقت کنید که مسیر Import درست باشد بر اساس جایگاه فایل
 
 export async function GET(req: Request) {
   try {
-    await connectDB();
     const { searchParams } = new URL(req.url);
     const telegramId = searchParams.get('telegramId');
 
@@ -12,9 +10,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'آیدی تلگرام الزامی است' }, { status: 400 });
     }
 
-    const history = await GameSession.find({ telegramId })
+    const client = await clientPromise;
+    const db = client.db('telegram_mini_game');
+    
+    // گرفتن ۱۰ بازی آخر
+    const history = await db.collection('games')
+      .find({ telegramId })
       .sort({ createdAt: -1 })
-      .limit(10);
+      .limit(10)
+      .toArray();
 
     return NextResponse.json({ success: true, history }, { status: 200 });
   } catch (error: any) {
