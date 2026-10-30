@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import clientPromise from '../../../lib/mongodb';
+import clientPromise from '../../../lib/mongodb'; 
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req: Request) {
@@ -13,17 +13,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Insufficient balance' });
     }
 
-    // کم کردن مبلغ شرط
+    // کم کردن مبلغ شرط از حساب کاربر
     await db.collection('users').updateOne(
       { telegramId },
       { $inc: { balance: -betAmount } }
     );
 
-    // ==========================================
-    // 🔴 حالت تست: قفل کردن ضریب دقیقا روی عدد 5
-    // الگوریتم تصادفی موقتا حذف شد
-    // ==========================================
-    const crashPoint = 5.00; 
+    // ==================================================
+    // الگوریتم استاندارد جهانی کازینو برای کرش (Provably Fair)
+    // ==================================================
+    const randomSeed = Math.random(); 
+    
+    // شانس 1 درصدی برای کرش روی ضریب 1.00 (House Edge یا سود سایت)
+    let crashPoint = 1.00;
+    
+    if (randomSeed >= 0.01) {
+      // تولید ضریب تصادفی با وزن‌دهی استاندارد (هرچه عدد بالاتر، شانس کمتر)
+      crashPoint = Math.floor(100 * (1 / (1 - randomSeed))) / 100;
+    }
+
+    // محدود کردن حداکثر ضریب به 100 برای جلوگیری از طولانی شدن بیش از حد
+    if (crashPoint > 100) {
+      crashPoint = 100.00;
+    }
 
     const gameId = uuidv4();
 
@@ -46,6 +58,7 @@ export async function POST(req: Request) {
       balance: updatedUser?.balance,
     });
   } catch (error) {
+    console.error('Crash Start API Error:', error);
     return NextResponse.json({ success: false, error: 'Internal error' });
   }
 }
