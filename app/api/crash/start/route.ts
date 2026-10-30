@@ -1,52 +1,51 @@
 import { NextResponse } from 'next/server';
-import { connectDB } from '../../../lib/mongodb';
-import { User, GameSession } from '../../../lib/models';
+import clientPromise from '../../../lib/mongodb';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req: Request) {
   try {
-    await connectDB();
     const { telegramId, betAmount } = await req.json();
+    const client = await clientPromise;
+    const db = client.db('telegram_mini_game');
+    const user = await db.collection('users').findOne({ telegramId });
 
-    if (!telegramId || !betAmount) {
-      return NextResponse.json({ error: 'اطلاعات ناقص است' }, { status: 400 });
-    }
-
-    const user = await User.findOne({ telegramId });
     if (!user || user.balance < betAmount) {
-      return NextResponse.json({ error: 'موجودی کافی نیست' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Insufficient balance' });
     }
 
-    // کسر موجودی
-    user.balance -= betAmount;
-    user.totalGames += 1;
-    await user.save();
+    // کم کردن مبلغ شرط
+    await db.collection('users').updateOne(
+      { telegramId },
+      { $inc: { balance: -betAmount } }
+    );
 
-    // تولید ضریب انفجار تصادفی در سرور
-    const randomValue = Math.random();
-    let crashPoint = parseFloat((1 / (1 - randomValue * 0.95)).toFixed(2));
-    if (crashPoint < 1.01) crashPoint = 1.01;
-    if (crashPoint > 15.0) crashPoint = 15.0;
+    // ==========================================
+    // 🔴 حالت تست: قفل کردن ضریب دقیقا روی عدد 5
+    // الگوریتم تصادفی موقتا حذف شد
+    // ==========================================
+    const crashPoint = 5.00; 
 
-    const startTime = Date.now();
+    const gameId = uuidv4();
 
-    const gameSession = await GameSession.create({
+    await db.collection('games').insertOne({
+      gameId,
       telegramId,
-      gameType: 'crash',
+      type: 'crash',
       betAmount,
-      status: 'active',
-      crashPoint,
-      startTime,
-      cashoutMultiplier: 0,
-      profit: 0,
+      targetCrash: crashPoint,
+      status: 'playing',
+      createdAt: new Date(),
     });
+
+    const updatedUser = await db.collection('users').findOne({ telegramId });
 
     return NextResponse.json({
       success: true,
-      balance: user.balance,
-      gameId: gameSession._id,
-      startTime,
+      gameId,
+      crashPoint,
+      balance: updatedUser?.balance,
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: 'Internal error' });
   }
 }

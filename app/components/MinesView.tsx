@@ -6,7 +6,7 @@ import { Sparkles, Coins } from 'lucide-react';
 
 export default function MinesView() {
   const { user, updateBalance } = useGameStore();
-  const [betAmount, setBetAmount] = useState<number | string>(50);
+  const [betAmount, setBetAmount] = useState<string>('50'); // اصلاح تایپ برای رفع باگ اینپوت
   const [gameId, setGameId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [revealedTiles, setRevealedTiles] = useState<number[]>([]);
@@ -34,7 +34,7 @@ export default function MinesView() {
       const res = await fetch('/api/mines/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegramId: user?.telegramId || '123456789', betAmount: numericBet }),
+        body: JSON.stringify({ telegramId: user?.telegramId, betAmount: numericBet }),
       });
       const data = await res.json();
       
@@ -51,26 +51,20 @@ export default function MinesView() {
         alert(data.error || 'Failed to start game.');
       }
     } catch (err) {
-      console.error('Error starting mines game:', err);
+      console.error(err);
     } finally {
       setIsStarting(false);
     }
   };
 
   const revealTile = async (index: number) => {
-    if (!isPlaying || revealedTiles.includes(index) || gameOver || !gameId) {
-      return;
-    }
+    if (!isPlaying || revealedTiles.includes(index) || gameOver || !gameId) return;
 
     try {
       const res = await fetch('/api/mines/reveal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telegramId: user?.telegramId || '123456789',
-          gameId,
-          tileIndex: index,
-        }),
+        body: JSON.stringify({ telegramId: user?.telegramId, gameId, tileIndex: index }),
       });
       const data = await res.json();
 
@@ -92,11 +86,9 @@ export default function MinesView() {
             setMessage('Safe choice! Keep going or Cash Out.');
           }
         }
-      } else {
-        alert(data.error || 'Invalid move.');
       }
     } catch (err) {
-      console.error('Error revealing tile:', err);
+      console.error(err);
     }
   };
 
@@ -107,7 +99,7 @@ export default function MinesView() {
       const res = await fetch('/api/mines/cashout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telegramId: user?.telegramId || '123456789', gameId }),
+        body: JSON.stringify({ telegramId: user?.telegramId, gameId }),
       });
       const data = await res.json();
       
@@ -117,11 +109,9 @@ export default function MinesView() {
         setIsPlaying(false);
         setBombs(data.bombs || []);
         setMessage(`Successfully cashed out! +${data.winnings} Coins 💰`);
-      } else {
-        alert(data.error || 'Cash out failed.');
       }
     } catch (err) {
-      console.error('Error during cash out:', err);
+      console.error(err);
     }
   };
 
@@ -135,31 +125,29 @@ export default function MinesView() {
         {isPlaying && (
           <button
             onClick={cashOut}
-            className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-zinc-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] cursor-pointer transition-all flex items-center gap-1.5"
+            className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-zinc-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all flex items-center gap-1.5"
           >
             <Sparkles className="w-4 h-4" /> Cash Out
           </button>
         )}
       </div>
 
-      {/* Fully Responsive Grid Container */}
       <div className="grid grid-cols-3 gap-3 w-full max-w-[360px] aspect-square">
         {Array.from({ length: 9 }).map((_, index) => {
           const isRevealed = revealedTiles.includes(index);
           const isBomb = bombs.includes(index);
           const isGameEnded = gameOver;
 
-          let cardStyle = "bg-zinc-900/90 border-zinc-800 hover:border-cyan-500/60 text-zinc-500 hover:bg-zinc-800/80 shadow-md";
+          let cardStyle = "bg-zinc-900/90 border-zinc-800 hover:border-cyan-500/60 text-zinc-500 shadow-md";
           let content = "💎";
 
           if (isRevealed) {
-            cardStyle = "bg-emerald-950/80 border-emerald-500 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)] scale-[0.98]";
-            content = "💎";
+            cardStyle = "bg-emerald-950/80 border-emerald-500 text-emerald-400 scale-[0.98]";
           } else if (isBomb && isGameEnded) {
-            cardStyle = "bg-red-950/90 border-red-500 text-red-500 shadow-[0_0_25px_rgba(239,68,68,0.5)] animate-pulse";
+            cardStyle = "bg-red-950/90 border-red-500 text-red-500 animate-pulse";
             content = "💣";
           } else if (isGameEnded && !isRevealed) {
-            cardStyle = "bg-zinc-950/40 border-zinc-900 text-zinc-700 opacity-60";
+            cardStyle = "bg-zinc-950/40 border-zinc-900 opacity-60";
             content = "✨";
           }
 
@@ -168,12 +156,12 @@ export default function MinesView() {
               <button
                 onClick={() => revealTile(index)}
                 disabled={!isPlaying || isRevealed || isGameEnded}
-                className={`w-full h-full rounded-2xl relative transition-all duration-300 cursor-pointer border flex items-center justify-center text-3xl font-bold ${cardStyle}`}
+                className={`w-full h-full rounded-2xl relative transition-all duration-300 border flex items-center justify-center text-3xl ${cardStyle}`}
               >
-                <div className={`absolute inset-0 rounded-2xl flex items-center justify-center text-xl ${isRevealed || (isBomb && isGameEnded) ? 'hidden' : 'flex'}`}>
+                <div className={`absolute inset-0 flex items-center justify-center text-xl ${isRevealed || (isBomb && isGameEnded) ? 'hidden' : 'flex'}`}>
                   {isPlaying ? '⭐' : '🔒'}
                 </div>
-                <div className={`absolute inset-0 rounded-2xl flex items-center justify-center ${isRevealed || (isBomb && isGameEnded) ? 'flex' : 'hidden'}`}>
+                <div className={`absolute inset-0 flex items-center justify-center ${isRevealed || (isBomb && isGameEnded) ? 'flex' : 'hidden'}`}>
                   {content}
                 </div>
               </button>
@@ -198,7 +186,7 @@ export default function MinesView() {
               type="number"
               value={betAmount}
               onChange={(e) => setBetAmount(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-3.5 text-zinc-100 font-black focus:outline-none focus:border-cyan-500 transition-all text-sm shadow-inner"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-4 py-3.5 text-zinc-100 font-black focus:outline-none focus:border-cyan-500 transition-all text-sm"
               placeholder="Enter coins..."
               min="1"
             />
@@ -207,7 +195,7 @@ export default function MinesView() {
           <button
             onClick={startGame}
             disabled={isStarting}
-            className="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-zinc-950 font-black rounded-2xl shadow-[0_0_25px_rgba(6,182,212,0.4)] hover:brightness-110 transition-all cursor-pointer text-sm tracking-wide disabled:opacity-50"
+            className="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-zinc-950 font-black rounded-2xl shadow-[0_0_25px_rgba(6,182,212,0.4)] transition-all disabled:opacity-50"
           >
             {isStarting ? 'Starting Game...' : 'Start Mines Game 💣'}
           </button>
